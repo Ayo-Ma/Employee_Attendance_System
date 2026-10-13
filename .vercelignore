@@ -1,0 +1,5 @@
+# Only the static site is deployed
+server.js
+package.json
+README.md
+_backup-original

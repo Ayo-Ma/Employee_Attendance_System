@@ -1,0 +1,99 @@
+/**
+ * Print styles. The app builds the printable page (attendance register or
+ * staff badges) inside #printArea; everything else is hidden on paper.
+ */
+@page {
+    margin: 14mm;
+}
+
+body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font: 10.5pt/1.4 "IBM Plex Sans", "Segoe UI", Arial, sans-serif;
+}
+
+.app,
+.toasts,
+dialog {
+    display: none !important;
+}
+
+#printArea {
+    display: block !important;
+}
+
+/* --- Attendance register --- */
+.print-head {
+    padding-bottom: 8pt;
+    margin-bottom: 12pt;
+    border-bottom: 1.5pt solid #000000;
+}
+
+.print-head h1 {
+    font: 700 16pt/1.2 "IBM Plex Sans Condensed", "Arial Narrow", Arial, sans-serif;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.print-head p {
+    margin-top: 2pt;
+    font-size: 9.5pt;
+    color: #333333;
+}
+
+.print-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.print-table th,
+.print-table td {
+    padding: 5pt 7pt;
+    border: 0.75pt solid #555555;
+    text-align: left;
+    font-size: 9.5pt;
+    vertical-align: top;
+}
+
+.print-table th {
+    background: #eeeeee;
+    font-size: 8pt;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}
+
+.print-table tr {
+    break-inside: avoid;
+}
+
+.print-sign {
+    display: flex;
+    justify-content: space-between;
+    gap: 40pt;
+    margin-top: 44pt;
+    break-inside: avoid;
+}
+
+.print-sign span {
+    flex: 1;
+    padding-top: 5pt;
+    border-top: 0.75pt solid #000000;
+    font-size: 9pt;
+}
+
+/* --- Badges: three to a row, with cut lines --- */
+.print-badges {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8mm;
+}
+
+.print-badges img {
+    width: 100%;
+    border: 0.5pt dashed #888888;
+    break-inside: avoid;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}

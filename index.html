@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>PDN Attendance</title>
+    <meta name="description" content="Staff clock-in and clock-out for PISHON Digital Network.">
+    <meta name="theme-color" content="#e4e7ea" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#111418" media="(prefers-color-scheme: dark)">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><rect width=%2232%22 height=%2232%22 rx=%227%22 fill=%22%233b2fc9%22/><circle cx=%2216%22 cy=%2216%22 r=%228.5%22 fill=%22none%22 stroke=%22white%22 stroke-width=%222.4%22/><path d=%22M16 11v5.4l3.4 2%22 fill=%22none%22 stroke=%22white%22 stroke-width=%222.4%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/></svg>">
+    <script>
+        // Apply the saved appearance before first paint
+        try {
+            var t = (JSON.parse(localStorage.getItem('clockin_settings_v1')) || {}).theme;
+            if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+        } catch (e) {}
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/print.css" media="print">
+</head>
+<body>
+
+    <!-- Icon sprite -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <defs>
+            <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.2l3.4 2"/></symbol>
+            <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+            <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.4 3.2-5.5 6.5-5.5s5.9 2.1 6.5 5.5M16 4.8a3.5 3.5 0 0 1 0 6.4M18.5 14.9c1.6.8 2.7 2.5 3 5.1"/></symbol>
+            <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
+            <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></symbol>
+            <symbol id="i-camera" viewBox="0 0 24 24"><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.6l1.6-2.5h6.6L16.9 7h2.6A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/><circle cx="12" cy="12.8" r="3.4"/></symbol>
+            <symbol id="i-flip" viewBox="0 0 24 24"><path d="M4 9a8 8 0 0 1 14.5-3.5L20 7M20 3v4h-4M20 15a8 8 0 0 1-14.5 3.5L4 17M4 21v-4h4"/></symbol>
+            <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+            <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></symbol>
+            <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 8V4h10v4M7 17H5a1.5 1.5 0 0 1-1.5-1.5v-6A1.5 1.5 0 0 1 5 8h14a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 19 17h-2M7 14h10v6H7z"/></symbol>
+            <symbol id="i-qr" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2.5v2.5H14zM17.5 17.5H20V20h-2.5zM20 14v.01M14 20v.01"/></symbol>
+            <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/></symbol>
+            <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l.8 12.5h9.4L17.5 7M10 11v5M14 11v5"/></symbol>
+            <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+            <symbol id="i-back" viewBox="0 0 24 24"><path d="M9 6 3.5 12 9 18h10.5a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1zM12 10l4 4M16 10l-4 4"/></symbol>
+            <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+        </defs>
+    </svg>
+
+    <!-- Sign-in (shown instead of the app until someone signs in) -->
+    <section id="gate" class="gate" hidden></section>
+
+    <div class="app">
+
+        <header class="topbar">
+            <div class="brand">
+                <span class="brand-mark" aria-hidden="true"><svg class="icon"><use href="#i-clock"/></svg></span>
+                <span class="brand-name" id="brandName">PDN</span>
+                <span class="brand-sub">Attendance</span>
+            </div>
+
+            <nav class="tabs" aria-label="Sections">
+                <button class="tab" data-view="clock" aria-current="page">
+                    <svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg><span>Clock in</span>
+                </button>
+                <button class="tab" data-view="timesheet">
+                    <svg class="icon" aria-hidden="true"><use href="#i-list"/></svg><span>Timesheet</span>
+                </button>
+                <button class="tab" data-view="team">
+                    <svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Team</span>
+                </button>
+            </nav>
+
+            <div class="topbar-actions">
+                <button id="syncChip" class="sync-chip" data-phase="off" title="Google Sheet connection">
+                    <i aria-hidden="true"></i><span id="syncChipLabel">Not connected</span>
+                </button>
+                <button id="unlockBtn" class="btn" hidden>
+                    <svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span>Unlock</span>
+                </button>
+                <button id="settingsBtn" class="icon-btn" aria-label="Settings" title="Settings">
+                    <svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <main>
+            <!-- ============ CLOCK IN ============ -->
+            <section id="view-clock" class="view">
+                <div class="mode-switch segmented" role="group" aria-label="How this device is used">
+                    <button data-mode="kiosk">Front desk</button>
+                    <button data-mode="personal">My time card</button>
+                </div>
+
+                <!-- Shared screen at the entrance -->
+                <div id="kioskMode" class="kiosk">
+                    <aside class="kiosk-side">
+                        <div class="clock" aria-live="off">
+                            <div class="clock-time">
+                                <span id="clockHM">--:--</span><span id="clockSec" class="clock-sec">--</span><span id="clockAmPm" class="clock-ampm"></span>
+                            </div>
+                            <div id="clockDate" class="clock-date"></div>
+                        </div>
+
+                        <ul id="tally" class="tally" aria-label="Today"></ul>
+
+                        <div id="scanner" class="scanner" data-state="off">
+                            <div class="scanner-view">
+                                <video id="scannerVideo" playsinline muted></video>
+                                <div class="scanner-idle">
+                                    <svg class="icon" aria-hidden="true"><use href="#i-qr"/></svg>
+                                    <span>Have a badge? Start the camera and hold it up.</span>
+                                </div>
+                                <div class="scanner-frame" aria-hidden="true"></div>
+                                <div id="scanResult" class="scan-result" hidden></div>
+                            </div>
+                            <div class="scanner-bar">
+                                <p id="scannerStatus" class="scanner-status" role="status"></p>
+                                <button id="flipBtn" class="icon-btn" aria-label="Switch camera" title="Switch camera" hidden>
+                                    <svg class="icon" aria-hidden="true"><use href="#i-flip"/></svg>
+                                </button>
+                                <button id="cameraBtn" class="btn">
+                                    <svg class="icon" aria-hidden="true"><use href="#i-camera"/></svg><span>Start camera</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <button id="lockBtn" class="link-btn lock-link" hidden>
+                            <svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span>Lock this screen for the front desk</span>
+                        </button>
+                    </aside>
+
+                    <section class="roster" aria-labelledby="rosterTitle">
+                        <div class="roster-head">
+                            <h1 id="rosterTitle">Tap your name</h1>
+                            <label class="search">
+                                <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
+                                <input type="search" id="staffSearch" placeholder="Find a name" autocomplete="off" aria-label="Find a name">
+                            </label>
+                        </div>
+                        <div id="staffGrid" class="staff-grid"></div>
+                    </section>
+                </div>
+
+                <!-- One person's own phone -->
+                <div id="personalMode" class="personal" hidden></div>
+            </section>
+
+            <!-- ============ TIMESHEET ============ -->
+            <section id="view-timesheet" class="view" hidden>
+                <header class="view-head">
+                    <div>
+                        <h1>Timesheet</h1>
+                        <p id="tsSummary" class="view-sub"></p>
+                    </div>
+                    <div class="view-actions">
+                        <button id="exportBtn" class="btn"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg><span>Export CSV</span></button>
+                        <button id="printBtn" class="btn"><svg class="icon" aria-hidden="true"><use href="#i-print"/></svg><span>Print</span></button>
+                        <button id="addEntryBtn" class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Add entry</span></button>
+                    </div>
+                </header>
+
+                <div class="toolbar">
+                    <div id="rangeFilter" class="segmented" role="group" aria-label="Period">
+                        <button data-range="today" aria-pressed="true">Today</button>
+                        <button data-range="yesterday">Yesterday</button>
+                        <button data-range="week">7 days</button>
+                        <button data-range="month">30 days</button>
+                    </div>
+                    <label class="search">
+                        <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
+                        <input type="search" id="tsSearch" placeholder="Search name or note" autocomplete="off" aria-label="Search entries">
+                    </label>
+                </div>
+
+                <div id="ledger" class="ledger"></div>
+            </section>
+
+            <!-- ============ TEAM ============ -->
+            <section id="view-team" class="view" hidden>
+                <header class="view-head">
+                    <div>
+                        <h1>Team</h1>
+                        <p id="teamSummary" class="view-sub"></p>
+                    </div>
+                    <div class="view-actions">
+                        <button id="printBadgesBtn" class="btn"><svg class="icon" aria-hidden="true"><use href="#i-print"/></svg><span>Print badges</span></button>
+                        <button id="addStaffBtn" class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Add staff</span></button>
+                    </div>
+                </header>
+                <div id="teamGrid" class="team-grid"></div>
+            </section>
+        </main>
+    </div>
+
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+
+    <!-- Add / edit an attendance entry -->
+    <dialog id="entryDialog" class="dialog" aria-labelledby="entryTitle">
+        <form id="entryForm" novalidate>
+            <header class="dialog-head">
+                <h2 id="entryTitle">Add entry</h2>
+                <button type="button" class="icon-btn" data-close aria-label="Close"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+            </header>
+            <div class="dialog-body">
+                <label class="field">
+                    <span>Staff member</span>
+                    <select id="entryEmployee" required></select>
+                </label>
+                <label class="field">
+                    <span>Date</span>
+                    <input type="date" id="entryDate" required>
+                </label>
+                <div class="field-pair">
+                    <label class="field">
+                        <span>Clock in</span>
+                        <input type="time" id="entryIn" required>
+                    </label>
+                    <label class="field">
+                        <span>Clock out <em>optional</em></span>
+                        <input type="time" id="entryOut">
+                    </label>
+                </div>
+                <p id="entryHint" class="field-hint"></p>
+                <label class="field">
+                    <span>Note <em>optional</em></span>
+                    <input type="text" id="entryNotes" maxlength="140" placeholder="Forgot badge, off-site meeting…">
+                </label>
+                <p id="entryError" class="field-error" role="alert"></p>
+            </div>
+            <footer class="dialog-foot">
+                <button type="button" id="entryDeleteBtn" class="btn btn-danger" hidden>Delete entry</button>
+                <span class="spacer"></span>
+                <button type="button" class="btn" data-close>Cancel</button>
+                <button type="submit" class="btn btn-primary">Save entry</button>
+            </footer>
+        </form>
+    </dialog>
+
+    <!-- Add / edit a staff member -->
+    <dialog id="staffDialog" class="dialog" aria-labelledby="staffTitle">
+        <form id="staffForm" novalidate>
+            <header class="dialog-head">
+                <h2 id="staffTitle">Add staff</h2>
+                <button type="button" class="icon-btn" data-close aria-label="Close"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+            </header>
+            <div class="dialog-body">
+                <label class="field">
+                    <span>Full name</span>
+                    <input type="text" id="staffName" maxlength="60" autocomplete="off" required>
+                </label>
+                <label class="field">
+                    <span>Role <em>optional</em></span>
+                    <input type="text" id="staffRole" maxlength="60" autocomplete="off">
+                </label>
+                <label class="field">
+                    <span>Department <em>optional</em></span>
+                    <input type="text" id="staffDept" maxlength="60" autocomplete="off">
+                </label>
+                <div id="staffAccess" class="access-box" hidden>
+                    <label class="set-line">
+                        <span class="set-text"><b>Supervisor</b><small>Can correct the timesheet, manage the team and make other people supervisors.</small></span>
+                        <input type="checkbox" class="switch" id="staffSupervisor">
+                    </label>
+                    <div class="set-line">
+                        <span class="set-text"><b>PIN</b><small id="staffPinState"></small></span>
+                        <button type="button" class="btn" id="staffPinBtn">Reset PIN</button>
+                    </div>
+                </div>
+                <p id="staffError" class="field-error" role="alert"></p>
+            </div>
+            <footer class="dialog-foot">
+                <span class="spacer"></span>
+                <button type="button" class="btn" data-close>Cancel</button>
+                <button type="submit" class="btn btn-primary" id="staffSaveBtn">Add staff</button>
+            </footer>
+        </form>
+    </dialog>
+
+    <!-- Settings -->
+    <dialog id="settingsDialog" class="dialog dialog-wide" aria-labelledby="settingsTitle">
+        <header class="dialog-head">
+            <h2 id="settingsTitle">Settings</h2>
+            <button type="button" class="icon-btn" data-close aria-label="Close"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+        </header>
+        <div id="settingsBody" class="dialog-body"></div>
+    </dialog>
+
+    <!-- Personal QR code -->
+    <dialog id="qrDialog" class="dialog dialog-qr" aria-labelledby="qrName">
+        <header class="dialog-head">
+            <h2 id="qrName"></h2>
+            <button type="button" class="icon-btn" data-close aria-label="Close"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+        </header>
+        <div class="dialog-body">
+            <div class="qr-plate"><canvas id="qrCanvas"></canvas></div>
+            <p class="field-hint">Hold this up to the front-desk camera.</p>
+        </div>
+    </dialog>
+
+    <!-- PIN pad -->
+    <dialog id="pinDialog" class="dialog dialog-pin" aria-labelledby="pinTitle">
+        <header class="dialog-head">
+            <h2 id="pinTitle"></h2>
+            <button type="button" class="icon-btn" data-close aria-label="Close"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+        </header>
+        <div class="dialog-body">
+            <p id="pinText" class="pin-text"></p>
+            <div id="pinDots" class="pin-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+            <p id="pinError" class="field-error" role="alert"></p>
+            <div id="pinPad" class="pin-pad">
+                <button type="button" data-key="1">1</button><button type="button" data-key="2">2</button><button type="button" data-key="3">3</button>
+                <button type="button" data-key="4">4</button><button type="button" data-key="5">5</button><button type="button" data-key="6">6</button>
+                <button type="button" data-key="7">7</button><button type="button" data-key="8">8</button><button type="button" data-key="9">9</button>
+                <span></span><button type="button" data-key="0">0</button>
+                <button type="button" data-key="back" aria-label="Delete last digit"><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg></button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- A new PIN, shown once to the supervisor -->
+    <dialog id="newPinDialog" class="dialog dialog-pin" aria-labelledby="newPinTitle">
+        <div class="dialog-body">
+            <h2 id="newPinTitle"></h2>
+            <div id="newPinValue" class="pin-reveal"></div>
+            <p id="newPinText" class="confirm-text"></p>
+        </div>
+        <footer class="dialog-foot">
+            <span class="spacer"></span>
+            <button type="button" class="btn btn-primary" data-close>Done</button>
+        </footer>
+    </dialog>
+
+    <!-- Confirm -->
+    <dialog id="confirmDialog" class="dialog" aria-labelledby="confirmTitle">
+        <div class="dialog-body">
+            <h2 id="confirmTitle"></h2>
+            <p id="confirmText" class="confirm-text"></p>
+        </div>
+        <footer class="dialog-foot">
+            <span class="spacer"></span>
+            <button type="button" class="btn" id="confirmNo">Cancel</button>
+            <button type="button" class="btn btn-danger" id="confirmYes">Remove</button>
+        </footer>
+    </dialog>
+
+    <!-- Filled only while printing -->
+    <div id="printArea"></div>
+
+    <script src="js/config.js"></script>
+    <script src="js/util.js"></script>
+    <script src="js/qrCodeLib.js"></script>
+    <script src="js/soundFX.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/sheetsSync.js"></script>
+    <script src="js/appsScript.js"></script>
+    <script src="js/clockEngine.js"></script>
+    <script src="js/badges.js"></script>
+    <script src="js/qrScanner.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

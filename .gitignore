@@ -1,0 +1,7 @@
+# The app as it was before the redesign (kept on this computer only)
+_backup-original/
+
+node_modules/
+.vercel/
+.DS_Store
+Thumbs.db
