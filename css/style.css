@@ -1034,9 +1034,23 @@ code,
     transform: scale(0.93);
 }
 
-.blob.is-waiting {
-    opacity: 0.6;
+/* Waiting for the sheet to confirm: the blob breathes and sends out rings */
+.blob.is-working {
     cursor: progress;
+    animation: blob-work 1s ease-in-out infinite alternate;
+}
+
+.blob.is-working .blob-ring {
+    animation: blob-ring 1.5s ease-out infinite;
+}
+
+.blob.is-working .blob-ring + .blob-ring {
+    animation-delay: 0.75s;
+}
+
+@keyframes blob-work {
+    from { transform: scale(0.94); }
+    to { transform: scale(1); }
 }
 
 .blob:focus-visible {

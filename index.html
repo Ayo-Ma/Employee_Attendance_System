@@ -7,6 +7,11 @@
     <meta name="description" content="Staff clock-in and clock-out for PISHON Digital Network.">
     <meta name="theme-color" content="#e4e7ea" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#111418" media="(prefers-color-scheme: dark)">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="PDN Clock">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><rect width=%2232%22 height=%2232%22 rx=%227%22 fill=%22%233b2fc9%22/><circle cx=%2216%22 cy=%2216%22 r=%228.5%22 fill=%22none%22 stroke=%22white%22 stroke-width=%222.4%22/><path d=%22M16 11v5.4l3.4 2%22 fill=%22none%22 stroke=%22white%22 stroke-width=%222.4%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/></svg>">
     <script>
         // Apply the saved appearance before first paint
@@ -356,5 +361,11 @@
     <script src="js/badges.js"></script>
     <script src="js/qrScanner.js"></script>
     <script src="js/app.js"></script>
+    <script>
+        // Installable app: keeps its own files on the phone so it opens instantly
+        if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+        }
+    </script>
 </body>
 </html>

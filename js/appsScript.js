@@ -7,17 +7,18 @@
  * the rules are enforced: who is signed in, who is a supervisor, PINs, and
  * whether a phone is at the office. The page cannot bypass these.
  */
-window.PDN_APPS_SCRIPT = `// PDN Attendance - Google Sheets backend (version 3)
+window.PDN_APPS_SCRIPT = `// PDN Attendance - Google Sheets backend (version 4)
 // Paste into Extensions > Apps Script of your attendance spreadsheet, then
 // Deploy > Manage deployments > Edit > Version: New version > Deploy.
 // (First time: Deploy > New deployment > Web app > Execute as: Me > Who has access: Anyone.)
 
-var VERSION = 3;
+var VERSION = 4;
 var TOKEN_DAYS = 90;        // how long a phone stays signed in
 var MAX_TRIES = 5;          // wrong PINs before a short lock
 var LOCK_MINUTES = 10;
 var UNDO_SECONDS = 120;     // how long staff can undo their own punch
 var MAX_SHIFT_HOURS = 18;
+var MAX_ROWS = 3000;        // newest attendance rows read per request, to stay fast as the sheet grows
 
 var REC = {
   name: 'Attendance',
@@ -83,13 +84,17 @@ function run_(req) {
     }
     if (req.action === 'ping') return { ok: true, version: VERSION, sheet: ss.getName() };
 
+    // The tabs and their headings are verified once, then trusted for six hours
+    var cache = CacheService.getScriptCache();
+    var known = cache.get('schema_' + VERSION) === '1';
     var ctx = {
       ss: ss,
-      rec: table_(ss, REC),
-      emp: table_(ss, EMP),
-      set: table_(ss, SET),
+      rec: table_(ss, REC, known),
+      emp: table_(ss, EMP, known),
+      set: table_(ss, SET, known),
       since: req.since
     };
+    if (!known) cache.put('schema_' + VERSION, '1', 21600);
     ctx.staff = loadStaff_(ctx.emp);
     ctx.settings = loadSettings_(ctx.set);
 
@@ -130,7 +135,7 @@ function handle_(req, ctx) {
       ctx.staff = loadStaff_(ctx.emp);
       first = ctx.staff.byId[newId];
     }
-    setCells_(ctx.emp, first.row, 'Supervisor', hashPin_(first.id, req.pin));
+    setCells_(ctx, first.row, 'Supervisor', hashPin_(first.id, req.pin));
     return session_(ctx, first.id);
   }
 
@@ -155,6 +160,8 @@ function handle_(req, ctx) {
         // The last supervisor can never be removed
         return it.type === 'employee' && !(it.op === 'delete' && isLastSupervisor_(ctx.staff, it.id));
       }), employeeRow_);
+      ctx.staffDirty = true;
+      ctx.recCache = null;
     }
     return state_(ctx, me.id);
   }
@@ -190,7 +197,7 @@ function handle_(req, ctx) {
     var current = checkPin_(me, req.pin);
     if (!current.ok) return current;
     if (!validPin_(req.newPin)) return fail_('pin', 'Choose a PIN of exactly 4 digits.');
-    setCells_(ctx.emp, me.row, null, hashPin_(me.id, req.newPin));
+    setCells_(ctx, me.row, null, hashPin_(me.id, req.newPin));
     return session_(ctx, me.id);
   }
 
@@ -204,7 +211,7 @@ function handle_(req, ctx) {
     if (!makeBoss && isLastSupervisor_(ctx.staff, who.id)) {
       return fail_('forbidden', 'There must always be at least one supervisor. Make someone else a supervisor first.');
     }
-    setCells_(ctx.emp, who.row, makeBoss ? 'Supervisor' : 'Staff', null);
+    setCells_(ctx, who.row, makeBoss ? 'Supervisor' : 'Staff', null);
     return state_(ctx, me.id);
   }
 
@@ -212,7 +219,7 @@ function handle_(req, ctx) {
     var owner = ctx.staff.byId[req.id];
     if (!owner) return fail_('forbidden', 'That person is no longer on the team. Sync and try again.');
     var pin = ('000' + Math.floor(Math.random() * 10000)).slice(-4);
-    setCells_(ctx.emp, owner.row, null, hashPin_(owner.id, pin));
+    setCells_(ctx, owner.row, null, hashPin_(owner.id, pin));
     CacheService.getScriptCache().remove('tries_' + owner.id);
     var reply = owner.id === me.id ? session_(ctx, me.id) : state_(ctx, me.id);
     reply.pin = pin;
@@ -288,7 +295,6 @@ function checkPin_(emp, pin) {
 }
 
 function session_(ctx, id) {
-  ctx.staff = loadStaff_(ctx.emp);
   var res = state_(ctx, id);
   res.token = token_(ctx.staff.byId[id]);
   return res;
@@ -339,7 +345,9 @@ function nextId_(staff) {
 }
 
 // Write the Access and/or PIN cells of one person (null leaves a cell alone)
-function setCells_(sh, row, access, pinHash) {
+function setCells_(ctx, row, access, pinHash) {
+  var sh = ctx.emp;
+  ctx.staffDirty = true;
   if (access !== null) sh.getRange(row, 8).setNumberFormat('@').setValue(access);
   if (pinHash !== null) sh.getRange(row, 9).setNumberFormat('@').setValue(pinHash);
 }
@@ -393,12 +401,30 @@ function checkPlace_(settings, geo) {
 
 // ---------------------------------------------------------------- punches
 
+// The newest attendance rows, read once per request and reused
+function recRows_(ctx) {
+  if (!ctx.recCache) {
+    var last = ctx.rec.getLastRow();
+    var start = Math.max(2, last - MAX_ROWS + 1);
+    ctx.recCache = {
+      start: start,
+      rows: last >= start ? ctx.rec.getRange(start, 1, last - start + 1, REC.headers.length).getDisplayValues() : []
+    };
+  }
+  return ctx.recCache;
+}
+
+function asText_(row) {
+  return row.map(function (v) { return String(v); });
+}
+
 // The sheet decides clock-in or clock-out and stamps the time itself,
 // so a phone cannot send a made-up time.
 function punch_(ctx, target, method) {
   var now = new Date();
   var zone = ctx.ss.getSpreadsheetTimeZone();
-  var rows = rows_(ctx.rec, REC.headers.length);
+  var book = recRows_(ctx);
+  var rows = book.rows;
   var open = -1;
 
   for (var i = 0; i < rows.length; i++) {
@@ -419,7 +445,9 @@ function punch_(ctx, target, method) {
       status: 'CLOCKED_IN', method: method, notes: '',
       arrivalIso: now.toISOString(), departureIso: '', updatedAt: now.getTime()
     };
-    write_(ctx.rec, REC, ctx.rec.getLastRow() + 1, [recordRow_(rec)]);
+    var added = recordRow_(rec);
+    write_(ctx.rec, REC, book.start + rows.length, [added]);
+    rows.push(asText_(added));
     return { action: 'in', recordId: rec.id, employeeId: target.id, at: now.toISOString() };
   }
 
@@ -430,12 +458,14 @@ function punch_(ctx, target, method) {
   row[7] = STATUS_LABELS.COMPLETED;
   row[11] = now.toISOString();
   row[12] = String(now.getTime());
-  write_(ctx.rec, REC, open + 2, [row]);
+  write_(ctx.rec, REC, book.start + open, [row]);
+  rows[open] = asText_(row);
   return { action: 'out', recordId: row[0], employeeId: target.id, at: now.toISOString() };
 }
 
 function undo_(ctx, me, boss, recordId) {
-  var rows = rows_(ctx.rec, REC.headers.length);
+  var book = recRows_(ctx);
+  var rows = book.rows;
   for (var i = 0; i < rows.length; i++) {
     if (rows[i][0] !== recordId) continue;
     var row = rows[i].slice();
@@ -448,9 +478,11 @@ function undo_(ctx, me, boss, recordId) {
       // Undo a clock-out: the shift is open again
       row[5] = ''; row[6] = ''; row[7] = STATUS_LABELS.CLOCKED_IN; row[11] = '';
       row[12] = String(Date.now());
-      write_(ctx.rec, REC, i + 2, [row]);
+      write_(ctx.rec, REC, book.start + i, [row]);
+      rows[i] = asText_(row);
     } else {
-      ctx.rec.deleteRow(i + 2);
+      ctx.rec.deleteRow(book.start + i);
+      ctx.recCache = null;
     }
     return { ok: true };
   }
@@ -460,8 +492,10 @@ function undo_(ctx, me, boss, recordId) {
 // ---------------------------------------------------------------- tables
 
 // Find the tab, creating it and keeping its header row up to date.
-function table_(ss, def) {
-  var sh = ss.getSheetByName(def.name) || ss.insertSheet(def.name);
+function table_(ss, def, known) {
+  var sh = ss.getSheetByName(def.name);
+  if (sh && known) return sh;
+  if (!sh) sh = ss.insertSheet(def.name);
   var width = def.headers.length;
   var current = sh.getLastRow() === 0 ? [] : sh.getRange(1, 1, 1, width).getDisplayValues()[0];
   if (current.join('|') !== def.headers.join('|')) {
@@ -555,13 +589,16 @@ function rows_(sh, width) {
 
 // What a signed-in person is allowed to see
 function state_(ctx, meId) {
-  ctx.staff = loadStaff_(ctx.emp);
+  if (ctx.staffDirty) {
+    ctx.staff = loadStaff_(ctx.emp);
+    ctx.staffDirty = false;
+  }
   var me = ctx.staff.byId[meId];
   var boss = me.access === 'supervisor';
   var codes = {};
   for (var code in STATUS_LABELS) codes[STATUS_LABELS[code]] = code;
 
-  var records = rows_(ctx.rec, REC.headers.length)
+  var records = recRows_(ctx).rows
     .filter(function (r) {
       return r[0] && r[10] && (!ctx.since || r[3] >= ctx.since) && (boss || r[1] === me.id);
     })

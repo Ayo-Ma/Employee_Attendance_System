@@ -49,6 +49,15 @@ Upload `index.html`, the `css` folder and the `js` folder to any static host tha
 
 To try it on this computer: `node server.js`, then open `http://localhost:3000`.
 
+## Install it as an app
+
+Open the site on the phone, then:
+
+- **Android (Chrome):** Settings in the app › **Install**, or the browser menu › **Install app**.
+- **iPhone (Safari):** Share button › **Add to Home Screen**.
+
+It then has its own icon, opens full screen, and loads from the phone instead of the network. After you deploy a change, phones pick it up the second time the app is opened.
+
 ## How it behaves
 
 - A punch from a signed-in phone goes straight to the sheet and needs a connection.

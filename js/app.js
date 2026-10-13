@@ -298,17 +298,23 @@ document.addEventListener('DOMContentLoaded', () => {
             <span class="tile-text"><b>${esc(person.name)}</b></span>
         </button>`;
 
+    const ROSTER_KEY = 'pdn_roster_v1';
+
     async function showGate() {
         stopCamera();
         $$('dialog[open]').forEach(dialog => dialog.close());
         appEl.hidden = true;
         gate.hidden = false;
-        gate.innerHTML = gateHtml('<p class="gate-note">Loading…</p>');
+        // Show the names this phone saw last time straight away, then refresh them
+        const remembered = storage.read(ROSTER_KEY, null);
+        if (remembered) renderGate(remembered);
+        else gate.innerHTML = gateHtml('<p class="gate-note">Loading…</p>');
 
         let res;
         try {
             res = await sheets.roster();
         } catch (err) {
+            if (remembered && err.code === 'network') return;
             const outdated = err.code === 'outdated';
             gate.innerHTML = gateHtml(`
                 <h1>${outdated ? 'The sheet needs one update' : 'Could not connect'}</h1>
@@ -326,6 +332,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const latest = { needsSetup: res.needsSetup, people: res.people };
+        storage.write(ROSTER_KEY, latest);
+        if (gate.hidden) return;
+        if (!remembered || JSON.stringify(remembered) !== JSON.stringify(latest)) renderGate(latest);
+    }
+
+    function renderGate(res) {
         if (res.needsSetup) {
             gate.innerHTML = gateHtml(`
                 <h1>Set up the first supervisor</h1>
@@ -555,25 +568,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (source === 'phone') celebrate(result);
     }
 
-    // When the app is opened or brought back to the front, what this phone shows may be
-    // out of date (the person may have clocked out at the front desk). The blob waits
-    // for one check with the sheet, or 4 seconds, before it accepts a tap.
-    let fresh = true;
-    let freshTimer = null;
+    // Finding a phone's position can take a few seconds, so start as soon as the app
+    // is opened; by the time the blob is tapped the answer is usually already there.
+    let lastFix = null;
     let seenCompleted = sheets.completed;
+    const needsLocation = () => !!sheets.shared.geoOn && role() === 'staff';
 
-    function waitForFreshData() {
-        if (!sheets.url || !sheets.getSession() || !navigator.onLine) return;
-        fresh = false;
-        clearTimeout(freshTimer);
-        freshTimer = setTimeout(markFresh, 4000);
+    function warmLocation() {
+        if (!needsLocation() || (lastFix && Date.now() - lastFix.at < 30000)) return;
+        getLocation().then(fix => { lastFix = { fix, at: Date.now() }; }).catch(() => {});
     }
 
-    function markFresh() {
-        clearTimeout(freshTimer);
-        if (fresh) return;
-        fresh = true;
-        render();
+    async function currentLocation() {
+        if (!needsLocation()) return undefined;
+        if (lastFix && Date.now() - lastFix.at < 60000) return lastFix.fix;
+        const fix = await getLocation();
+        lastFix = { fix, at: Date.now() };
+        return fix;
     }
 
     // The blob's confirmation: squeeze, burst, tick, then settle into the new state
@@ -762,7 +773,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') stopCamera();
         else {
-            waitForFreshData();
+            warmLocation();
             render();
         }
     });
@@ -881,11 +892,10 @@ document.addEventListener('DOMContentLoaded', () => {
             blob = $('#punchBtn', personalEl);
         }
         blob.dataset.state = isIn ? 'in' : 'out';
-        blob.classList.toggle('is-waiting', !fresh || punching);
+        blob.classList.toggle('is-working', punching);
         $('.blob-label', blob).textContent = isIn ? 'Clock out' : 'Clock in';
         let sub = isIn ? `In since ${U.fmtTime(status.record.arrivalIso)}` : 'Tap to start';
-        if (!fresh) sub = 'Checking…';
-        if (punching) sub = 'One moment…';
+        if (punching) sub = isIn ? 'Clocking out…' : 'Clocking in…';
         $('.blob-sub', blob).textContent = sub;
 
         $('#personalRest').innerHTML = `
@@ -920,13 +930,16 @@ document.addEventListener('DOMContentLoaded', () => {
         punching = true;
         renderPersonal();
         try {
-            const details = {};
-            if (sheets.shared.geoOn && role() === 'staff') details.geo = await getLocation();
-            const res = await sheets.punch(details);
+            if (navigator.vibrate) navigator.vibrate(15);
+        } catch (e) { /* not allowed here */ }
+        try {
+            const res = await sheets.punch({ geo: await currentLocation() });
             punching = false;
             handlePunch(fromSheet(res), 'phone');
         } catch (err) {
             punching = false;
+            // After a location refusal, the next try must use a fresh position
+            if (err.code === 'geo') lastFix = null;
             sound.playNotice();
             alertToast(err);
             render();
@@ -945,7 +958,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const blobBtn = e.target.closest('#punchBtn');
         if (blobBtn) {
             // Taps during the confirmation animation would clock straight back out
-            if (!fresh || punching || blobBtn.classList.contains('is-celebrating') || Date.now() - (lastTap.me || 0) < 1200) return;
+            if (punching || blobBtn.classList.contains('is-celebrating') || Date.now() - (lastTap.me || 0) < 1200) return;
             lastTap.me = Date.now();
             if (sheets.authOn) return punchViaSheet();
             return handlePunch(engine.punch(myId(), 'PHONE'), 'phone');
@@ -1483,6 +1496,26 @@ document.addEventListener('DOMContentLoaded', () => {
             </section>`;
     }
 
+    // Chrome and Edge offer an install prompt; iPhones install from the Share menu
+    let installPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        installPrompt = e;
+    });
+    const isInstalled = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    const isIphone = /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+    function installLine() {
+        if (isInstalled()) return '';
+        if (installPrompt) {
+            return `<div class="set-line"><span class="set-text"><b>Install the app</b><small>Puts PDN Clock on this device's home screen and opens it full screen.</small></span><button class="btn btn-primary" data-set="install">Install</button></div>`;
+        }
+        if (isIphone) {
+            return `<div class="set-line"><span class="set-text"><b>Install the app</b><small>In Safari, tap the Share button, then “Add to Home Screen”.</small></span></div>`;
+        }
+        return '';
+    }
+
     function renderSettings() {
         const status = sheets.getStatus();
         const theme = settings.theme || 'auto';
@@ -1494,6 +1527,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ${manage ? sheetBlock(status) : ''}
             <section class="set-block">
                 <h3>This device</h3>
+                ${installLine()}
                 <label class="set-line">
                     <span>Sounds</span>
                     <input type="checkbox" class="switch" id="setSound" ${settings.sound !== false ? 'checked' : ''}>
@@ -1546,6 +1580,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const action = button.dataset.set;
 
         if (action === 'sync') sheets.sync();
+
+        if (action === 'install' && installPrompt) {
+            installPrompt.prompt();
+            await installPrompt.userChoice.catch(() => {});
+            installPrompt = null;
+            renderSettings();
+        }
 
         if (action === 'copy') {
             const ok = await copyText(window.PDN_APPS_SCRIPT);
@@ -1643,7 +1684,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderConnection(status);
         const finished = sheets.completed !== seenCompleted;
         seenCompleted = sheets.completed;
-        if (finished) markFresh();
+        if (finished) warmLocation();
         // Keep the "loading the team" message in step with the connection
         if (!storage.getEmployees().length && (finished || status.phase === 'offline')) render();
     };
@@ -1669,8 +1710,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (role() === 'out') {
         showGate();
     } else {
-        waitForFreshData();
         enterApp();
+        warmLocation();
     }
     sheets.start();
 });
