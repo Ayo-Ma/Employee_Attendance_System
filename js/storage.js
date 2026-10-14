@@ -231,6 +231,43 @@ class ClockStorage {
         return changed;
     }
 
+    // Apply only what changed on the server since this device last asked:
+    // new or edited staff and records, and deletions. Anything this device
+    // has changed and not yet uploaded (`pending`) is left alone.
+    applyChanges(changes, pending) {
+        const gone = new Set((changes.deleted || []).map(d => `${d.type}:${d.id}`));
+        let changed = false;
+
+        const merge = (key, type, incoming) => {
+            const list = this.read(key, []);
+            const byId = new Map(list.map(item => [item.id, item]));
+            let touched = false;
+            (incoming || []).forEach(item => {
+                if (pending.has(`${type}:${item.id}`)) return;
+                const next = type === 'employee' ? { ...item, active: true } : item;
+                if (JSON.stringify(byId.get(item.id)) !== JSON.stringify(next)) {
+                    byId.set(item.id, next);
+                    touched = true;
+                }
+            });
+            byId.forEach((item, id) => {
+                if (gone.has(`${type}:${id}`) && !pending.has(`${type}:${id}`)) {
+                    byId.delete(id);
+                    touched = true;
+                }
+            });
+            if (touched) {
+                this.write(key, Array.from(byId.values()));
+                changed = true;
+            }
+        };
+
+        merge(this.EMPLOYEES_KEY, 'employee', changes.employees);
+        merge(this.RECORDS_KEY, 'record', changes.records);
+        if (changed) this.emit();
+        return changed;
+    }
+
     // --- CSV export ---
     exportToCSV(rows, filename) {
         const cell = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;

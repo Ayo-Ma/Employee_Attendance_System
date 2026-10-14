@@ -4,7 +4,7 @@
  * background, so a new version shows up the next time the app is opened.
  * Requests to the Google Sheet are never touched or stored.
  */
-const CACHE = 'pdn-app-v1';
+const CACHE = 'pdn-app-v2';
 
 const SHELL = [
     './',
@@ -18,7 +18,6 @@ const SHELL = [
     'js/soundFX.js',
     'js/storage.js',
     'js/sheetsSync.js',
-    'js/appsScript.js',
     'js/clockEngine.js',
     'js/badges.js',
     'js/qrScanner.js',
@@ -50,6 +49,7 @@ self.addEventListener('fetch', (event) => {
     if (request.method !== 'GET') return;
 
     const url = new URL(request.url);
+    if (url.pathname.startsWith('/api/')) return;   // always live
     const ownFile = url.origin === self.location.origin;
     if (!ownFile && !FONT_HOSTS.includes(url.hostname)) return;
 

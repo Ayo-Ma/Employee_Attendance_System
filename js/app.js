@@ -1,7 +1,7 @@
 /**
  * App controller — PDN Attendance
  * Sign-in, the three sections (Clock in, Timesheet, Team) and Settings, wired
- * to storage, the clock engine, the scanner and the Google Sheet.
+ * to storage, the clock engine, the scanner and the server.
  *
  * Who sees what:
  *   staff       their own time card only
@@ -315,19 +315,9 @@ document.addEventListener('DOMContentLoaded', () => {
             res = await sheets.roster();
         } catch (err) {
             if (remembered && err.code === 'network') return;
-            const outdated = err.code === 'outdated';
             gate.innerHTML = gateHtml(`
-                <h1>${outdated ? 'The sheet needs one update' : 'Could not connect'}</h1>
-                <p>${esc(outdated
-                    ? 'This version of the app adds sign-in. The script inside your Google Sheet has to be replaced once before anyone can sign in.'
-                    : err.message)}</p>
-                ${outdated ? `
-                    <ol class="gate-steps">
-                        <li>Press <b>Copy script</b> below.</li>
-                        <li>In the Google Sheet open <b>Extensions › Apps Script</b>, delete the code, paste, and save.</li>
-                        <li>Choose <b>Deploy › Manage deployments › Edit › Version: New version › Deploy</b>.</li>
-                    </ol>
-                    <button class="btn" data-gate="copy">${icon('download')}<span>Copy script</span></button>` : ''}
+                <h1>${err.code === 'network' ? 'No connection' : 'Could not connect'}</h1>
+                <p>${esc(err.message)}</p>
                 <button class="btn btn-primary" data-gate="retry">Try again</button>`);
             return;
         }
@@ -422,10 +412,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!action) return;
         if (action.dataset.gate === 'retry') showGate();
-        if (action.dataset.gate === 'copy') {
-            const ok = await copyText(window.PDN_APPS_SCRIPT);
-            toast(ok ? 'Script copied. Paste it into Apps Script.' : 'Could not copy. Open js/appsScript.js and copy the script from there.', ok ? {} : { tone: 'alert' });
-        }
     });
 
     sheets.onAuthLost = (lost) => {
@@ -1394,13 +1380,13 @@ document.addEventListener('DOMContentLoaded', () => {
         switch (status.phase) {
             case 'off': return { chip: 'Not connected', title: 'Not connected', detail: 'Entries are saved on this device only.' };
             case 'offline': return { chip: 'Offline', title: 'Offline', detail: status.queued ? `${waiting} will upload when the connection is back.` : 'Everything is saved on this device.' };
-            case 'syncing': return { chip: 'Syncing', title: 'Syncing…', detail: status.queued ? `Uploading ${waiting}.` : 'Checking the sheet for updates.' };
+            case 'syncing': return { chip: 'Syncing', title: 'Syncing…', detail: status.queued ? `Uploading ${waiting}.` : 'Checking for updates.' };
             case 'error': return { chip: 'Sync problem', title: 'Sync problem', detail: `${status.error} ${status.queued ? `${waiting} are safe on this device and will upload once this is fixed.` : ''}` };
             case 'pending': return { chip: `${status.queued} waiting`, title: `${waiting} waiting to upload`, detail: 'They are saved on this device.' };
             default: return {
                 chip: 'Synced',
-                title: status.sheetName ? `Connected to “${status.sheetName}”` : 'Connected',
-                detail: `${status.lastSyncAt ? `Last synced at ${U.fmtTime(status.lastSyncAt)}. ` : ''}Entries are in the “Attendance” tab of the sheet, staff in the “Staff” tab.`
+                title: 'Connected',
+                detail: status.lastSyncAt ? `Last synced at ${U.fmtTime(status.lastSyncAt)}.` : 'Ready.'
             };
         }
     }
@@ -1437,7 +1423,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function rulesBlock() {
         const shared = sheets.shared;
-        const hasPlace = shared.lat !== '' && shared.lat !== undefined && shared.lng !== '' && shared.lng !== undefined;
+        const hasPlace = typeof shared.lat === 'number' && typeof shared.lng === 'number';
         const radius = Number(shared.radius) || 200;
         return `
             <section class="set-block">
@@ -1464,33 +1450,27 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function sheetBlock(status) {
+        const copied = status.mirrorAt
+            ? (Date.now() - status.mirrorAt < 3 * 60000
+                ? `The sheet is up to date (last copied at ${U.fmtTime(status.mirrorAt)}).`
+                : `The sheet last copied at ${U.fmtTime(status.mirrorAt)} on ${U.fmtDay(U.dateKey(status.mirrorAt))}. If that is not recent, check its script.`)
+            : 'Not connected yet. Follow the steps below once.';
         return `
             <section class="set-block">
-                <h3>Google Sheet</h3>
+                <h3>Connection</h3>
                 <div id="connBox" class="conn"></div>
-                ${status.isPreset ? `
-                    <p class="field-hint">The link is set in <code>js/config.js</code>, so every device that opens this app uses the same sheet.</p>
-                ` : `
-                    <label class="field">
-                        <span>Web app URL</span>
-                        <input type="url" id="sheetUrl" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(status.url)}">
-                    </label>
-                    <p id="sheetUrlError" class="field-error" role="alert"></p>
-                    <div class="set-row">
-                        <button class="btn btn-primary" data-set="connect">${status.url ? 'Update link' : 'Connect'}</button>
-                        ${status.url ? '<button class="btn" data-set="disconnect">Disconnect</button>' : ''}
-                    </div>
-                    <p class="field-hint">To connect every device at once, put this URL in <code>js/config.js</code> instead.</p>
-                `}
-                <details class="steps" ${status.url ? '' : 'open'}>
-                    <summary>How to set up or update the sheet</summary>
+            </section>
+
+            <section class="set-block">
+                <h3>Google Sheet copy</h3>
+                <p class="field-hint">${esc(copied)} Entries appear in the “Attendance” tab, staff in “Staff”. Make changes in the app, not in the sheet.</p>
+                <details class="steps" ${status.mirrorAt ? '' : 'open'}>
+                    <summary>Connect or reconnect the sheet</summary>
                     <ol>
-                        <li>Open your Google Sheet and choose <b>Extensions › Apps Script</b>.</li>
-                        <li>Delete the code that is there, paste the script, and save.
-                            <button class="btn btn-small" data-set="copy">Copy script</button></li>
-                        <li>First time: <b>Deploy › New deployment</b>, type <b>Web app</b>, <b>Execute as: Me</b>, <b>Who has access: Anyone</b>.<br>
-                            Updating: <b>Deploy › Manage deployments › Edit › Version: New version</b>. The URL stays the same.</li>
-                        <li>The <b>Web app URL</b> ends in <code>/exec</code>.</li>
+                        <li>Press <button class="btn btn-small" data-set="copy">Copy sheet script</button></li>
+                        <li>In the Google Sheet open <b>Extensions › Apps Script</b>, delete everything, paste, and save.</li>
+                        <li>In the toolbar choose <b>pullFromApp</b> and press <b>Run</b>. Approve access when asked.</li>
+                        <li>Choose <b>Deploy › Manage deployments › Edit › Version: New version › Deploy</b>.</li>
                     </ol>
                 </details>
             </section>`;
@@ -1542,8 +1522,15 @@ document.addEventListener('DOMContentLoaded', () => {
         renderConnection(status);
     }
 
+    // Fetched as Settings opens, so "Copy" can put it on the clipboard right away
+    let sheetScriptRequest = null;
+
     function openSettings() {
         if (isLocked()) return;
+        if (canManage() && sheets.authOn) {
+            sheetScriptRequest = sheets.sheetScript();
+            sheetScriptRequest.catch(() => {});
+        }
         renderSettings();
         settingsDialog.showModal();
     }
@@ -1551,7 +1538,7 @@ document.addEventListener('DOMContentLoaded', () => {
     syncChip.addEventListener('click', openSettings);
     $('#settingsBtn').addEventListener('click', openSettings);
 
-    // Save a shared rule on the sheet, then redraw from what the sheet accepted
+    // Save a shared rule on the server, then redraw from what it accepted
     async function saveRule(patch) {
         try {
             await sheets.saveShared(patch);
@@ -1589,35 +1576,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (action === 'copy') {
-            const ok = await copyText(window.PDN_APPS_SCRIPT);
-            toast(ok ? 'Script copied. Paste it into Apps Script.' : 'Could not copy. Open js/appsScript.js and copy the script from there.', ok ? {} : { tone: 'alert' });
-        }
-
-        if (action === 'connect') {
-            const errorEl = $('#sheetUrlError');
-            errorEl.textContent = '';
             button.disabled = true;
-            button.textContent = 'Checking…';
             try {
-                await sheets.connect($('#sheetUrl').value);
-                settingsDialog.close();
-                showGate();
+                const ok = await copyText(await (sheetScriptRequest || sheets.sheetScript()));
+                toast(ok ? 'Sheet script copied. Paste it into Apps Script.' : 'Could not copy to the clipboard on this device. Try from a computer.', ok ? {} : { tone: 'alert' });
             } catch (err) {
-                errorEl.textContent = err.code === 'outdated'
-                    ? 'That sheet is running an older script. Replace it using the steps below, then connect again.'
-                    : err.message;
-                button.disabled = false;
-                button.textContent = sheets.url ? 'Update link' : 'Connect';
+                alertToast(err);
             }
-        }
-
-        if (action === 'disconnect') {
-            const yes = await confirmAction('Disconnect the sheet?', 'This device will stop using the sheet and go back to working on its own. Entries already in the sheet stay there.', 'Disconnect');
-            if (!yes) return;
-            sheets.disconnect();
-            settingsDialog.close();
-            applyRole();
-            render();
+            button.disabled = false;
         }
 
         if (action === 'sign-out') {
@@ -1672,7 +1638,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target.id === 'setKioskPin') saveRule({ kioskPin: e.target.checked });
         if (e.target.id === 'setGeo') {
             const shared = sheets.shared;
-            if (e.target.checked && (shared.lat === '' || shared.lat === undefined)) {
+            if (e.target.checked && typeof shared.lat !== 'number') {
                 e.target.checked = false;
                 return toast('Set the office location first: stand in the office and press “Use where I am now”.', { duration: 7000 });
             }

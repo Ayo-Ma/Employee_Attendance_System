@@ -10,6 +10,7 @@ const os = require('os');
 
 const PORT = process.env.PORT || 3000;
 const BASE_DIR = __dirname;
+const apiHandler = require('./api/app.js');
 
 const MIME_TYPES = {
     '.html': 'text/html; charset=utf-8',
@@ -32,6 +33,9 @@ const server = http.createServer((req, res) => {
         return res.end('400 Bad Request');
     }
     if (reqPath === '/' || reqPath === '') reqPath = '/index.html';
+
+    // The same server function Vercel runs. Needs FIREBASE_SERVICE_ACCOUNT_FILE set to the key file.
+    if (reqPath === '/api/app') return apiHandler(req, res);
 
     const filePath = path.join(BASE_DIR, reqPath);
 

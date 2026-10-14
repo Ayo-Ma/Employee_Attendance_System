@@ -1,10 +1,14 @@
 # PDN Attendance
 
-Staff clock-in and clock-out for PISHON Digital Network. Everyone uses it from their own phone; a shared front-desk screen is optional. One Google Sheet is the database.
+Staff clock-in and clock-out for PISHON Digital Network. Everyone uses it from their own phone; a shared front-desk screen is optional.
+
+- **Database:** Firebase Firestore (project `pdn-employee-attendance-system`).
+- **Server:** one Vercel function, `api/app.js`. It checks every request, so the rules below cannot be bypassed from the page.
+- **Google Sheet:** a live copy of everything, updated within a minute, usually seconds. Make changes in the app, not in the sheet.
 
 ## Who can do what
 
-Everyone signs in once per phone with their name and a 4-digit PIN. The Google Sheet checks every request, so these rules cannot be bypassed from the page.
+Everyone signs in once per phone with their name and a 4-digit PIN.
 
 | | Staff | Supervisor |
 | --- | --- | --- |
@@ -21,7 +25,7 @@ Everyone signs in once per phone with their name and a 4-digit PIN. The Google S
 
 **Another supervisor:** Team › Edit › switch on Supervisor.
 
-**Locked out completely?** Open the Staff tab of the sheet, delete the cell in the "PIN (hidden)" column for every supervisor, and reload the app. It will offer the first-supervisor setup again.
+**Locked out completely?** In the Firebase console open Firestore › `staff`, and on every document whose `access` is `supervisor`, delete the `pinHash` field. Reload the app; it will offer the first-supervisor setup again.
 
 ## Clock-in rules (Settings, supervisors only)
 
@@ -29,40 +33,38 @@ Everyone signs in once per phone with their name and a 4-digit PIN. The Google S
 - **PIN at the front desk.** On a shared screen, tapping a name asks for that person's PIN. Scanning a QR badge does not ask for a PIN.
 - **Lock this screen.** On a shared screen in Front desk mode, a supervisor can lock it so only clocking in and out works until their PIN unlocks it.
 
-The time of every phone punch is stamped by the sheet, not by the phone.
+The time of every phone punch is stamped by the server, not by the phone.
 
 What these do not stop: someone sharing their PIN with a colleague, lending their badge, or faking GPS with a special app.
 
-## Connect the Google Sheet (once)
+## Deploying (Vercel)
 
-1. Open your Google Sheet and choose **Extensions › Apps Script**.
-2. In the app press **Copy script** (on the sign-in screen if the sheet is out of date, otherwise in Settings). Delete the code in Apps Script, paste, and save.
-3. First time: **Deploy › New deployment**, type **Web app**, **Execute as: Me**, **Who has access: Anyone**.
-   Updating an existing one: **Deploy › Manage deployments › Edit › Version: New version**. The URL stays the same.
-4. The **Web app URL** ends in `/exec`. It goes in `js/config.js` as `sheetsUrl`, so every device uses it without any setup.
+1. The Vercel project needs one environment variable, **`FIREBASE_SERVICE_ACCOUNT`**: the entire contents of the Firebase service-account key file (Firebase console › Project settings › Service accounts › Generate new private key). Never commit that file.
+2. Push to `main`. Vercel serves `index.html`, `css`, `js` and `icons` as they are and runs `api/app.js` as the server function (region `iad1`, next to the database). After changing an environment variable, use **Redeploy**.
 
-The script keeps three tabs: **Attendance**, **Staff** and **Settings**. Edit entries in the app rather than typing in those tabs.
+To run it on this computer: set `FIREBASE_SERVICE_ACCOUNT_FILE` to the key file's path, run `node server.js`, and open `http://localhost:3000`.
 
-## Deploy
+## Connecting the Google Sheet copy
 
-Upload `index.html`, the `css` folder and the `js` folder to any static host that serves HTTPS. HTTPS is required for location and for the camera.
+1. In the app: Settings › Google Sheet copy › **Copy sheet script** (supervisors only).
+2. In the Google Sheet: **Extensions › Apps Script**, delete everything, paste, save.
+3. In the toolbar choose **pullFromApp** and press **Run**. Approve access. Existing tabs are kept, renamed "… (before Firebase)".
+4. **Deploy › Manage deployments › Edit › Version: New version › Deploy.** The web app URL must match `sheetUrl` in `js/config.js`; the app pings it after each change so the sheet updates straight away.
 
-To try it on this computer: `node server.js`, then open `http://localhost:3000`.
+The script then checks for changes every minute by itself. Settings shows when the sheet last copied.
 
 ## Install it as an app
-
-Open the site on the phone, then:
 
 - **Android (Chrome):** Settings in the app › **Install**, or the browser menu › **Install app**.
 - **iPhone (Safari):** Share button › **Add to Home Screen**.
 
-It then has its own icon, opens full screen, and loads from the phone instead of the network. After you deploy a change, phones pick it up the second time the app is opened.
+After you deploy a change, phones pick it up the second time the app is opened.
 
 ## How it behaves
 
-- A punch from a signed-in phone goes straight to the sheet and needs a connection.
+- Punches from a signed-in phone go straight to the server and need a connection.
 - Supervisors' corrections are saved on the device first and upload when the connection allows.
-- Open screens check the sheet every 60 seconds.
+- Open screens check for changes every 30 seconds, and only download what changed.
 - Staff can undo their own punch for two minutes.
 - A badge left in front of the camera counts once.
 - A shift still open after 18 hours is marked **No clock-out** for a supervisor to fix.
@@ -71,16 +73,13 @@ It then has its own icon, opens full screen, and loads from the phone instead of
 ## Files
 
 ```
-index.html            page structure
-css/style.css         design
-css/print.css         printed register and badges
-js/config.js          organisation name and the Google Sheet URL
-js/app.js             screens and interactions
-js/clockEngine.js     punch rules for supervisor devices
-js/storage.js         on-device data
-js/sheetsSync.js      sign-in and all traffic with the sheet
-js/appsScript.js      the script that goes into the Google Sheet (where the rules are enforced)
-js/qrScanner.js       camera scanning (jsQR in js/vendor as the fallback decoder)
-js/badges.js          QR codes and badge images
-_backup-original/     the app as it was before the redesign (do not upload)
+index.html, css/, js/, icons/   the app (static files)
+sw.js, manifest.webmanifest     makes it installable and quick to open
+api/app.js                      the server function
+api/_lib/logic.js               the rules: sign-in, PINs, roles, punches, location
+api/_lib/firestore.js           talks to Firestore
+api/_lib/sheetScript.js         the Google Sheet copy script handed out by the app
+js/config.js                    organisation name, server path, sheet ping URL
+server.js                       local test server (not deployed)
+_backup-original/               the app before the redesign (not in git)
 ```
